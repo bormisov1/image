@@ -283,6 +283,7 @@ type Options struct {
 	// types of images and compressors. For example, it works well for
 	// photos with Deflate compression.
 	Predictor bool
+	SingleBit bool
 }
 
 // Encode writes the image m to w. opt determines the options used for
@@ -293,10 +294,12 @@ func Encode(w io.Writer, m image.Image, opt *Options) error {
 
 	compression := uint32(cNone)
 	predictor := false
+	singleBit := false
 	if opt != nil {
 		compression = opt.Compression.specValue()
 		// The predictor field is only used with LZW. See page 64 of the spec.
 		predictor = opt.Predictor && compression == cLZW
+		singleBit = opt.SingleBit
 	}
 
 	_, err := io.WriteString(w, leHeader)
@@ -366,7 +369,11 @@ func Encode(w io.Writer, m image.Image, opt *Options) error {
 	case *image.Gray:
 		photometricInterpretation = pBlackIsZero
 		samplesPerPixel = 1
-		bitsPerSample = []uint32{8}
+		if singleBit {
+			bitsPerSample = []uint32{1}
+		} else {
+			bitsPerSample = []uint32{8}
+		}
 		err = encodeGray(dst, m.Pix, d.X, d.Y, m.Stride, predictor)
 	case *image.Gray16:
 		photometricInterpretation = pBlackIsZero
