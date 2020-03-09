@@ -1,4 +1,4 @@
-module golang.org/x/image
+module golang.org/bormisov1/image
 
 go 1.12
 

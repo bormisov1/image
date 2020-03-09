@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"image"
 	"io"
+	"math"
 	"sort"
 )
 
@@ -282,8 +283,8 @@ type Options struct {
 	// preceding one is saved.  This improves the compression for certain
 	// types of images and compressors. For example, it works well for
 	// photos with Deflate compression.
-	Predictor bool
-	SingleBit bool
+	Predictor    bool
+	OneBitPerPix bool
 }
 
 // Encode writes the image m to w. opt determines the options used for
@@ -294,12 +295,12 @@ func Encode(w io.Writer, m image.Image, opt *Options) error {
 
 	compression := uint32(cNone)
 	predictor := false
-	singleBit := false
+	oneBitPerPix := false
 	if opt != nil {
 		compression = opt.Compression.specValue()
 		// The predictor field is only used with LZW. See page 64 of the spec.
 		predictor = opt.Predictor && compression == cLZW
-		singleBit = opt.SingleBit
+		oneBitPerPix = opt.OneBitPerPix
 	}
 
 	_, err := io.WriteString(w, leHeader)
@@ -326,6 +327,9 @@ func Encode(w io.Writer, m image.Image, opt *Options) error {
 			imageLen = d.X * d.Y * 1
 		case *image.Gray:
 			imageLen = d.X * d.Y * 1
+			if oneBitPerPix {
+				imageLen = ((imageLen + 7) / 8)
+			}
 		case *image.Gray16:
 			imageLen = d.X * d.Y * 2
 		case *image.RGBA64:
@@ -369,12 +373,18 @@ func Encode(w io.Writer, m image.Image, opt *Options) error {
 	case *image.Gray:
 		photometricInterpretation = pBlackIsZero
 		samplesPerPixel = 1
-		if singleBit {
+		bitsPerSample = []uint32{8}
+		if oneBitPerPix {
 			bitsPerSample = []uint32{1}
+			var combinedPixBytes []byte
+			for len(m.Pix) > 0 {
+				combinedPixBytes = append(combinedPixBytes, bitsToByte(m.Pix[0:8]))
+				m.Pix = m.Pix[8:]
+			}
+			_, err = dst.Write(combinedPixBytes)
 		} else {
-			bitsPerSample = []uint32{8}
+			err = encodeGray(dst, m.Pix, d.X, d.Y, m.Stride, predictor)
 		}
-		err = encodeGray(dst, m.Pix, d.X, d.Y, m.Stride, predictor)
 	case *image.Gray16:
 		photometricInterpretation = pBlackIsZero
 		samplesPerPixel = 1
@@ -427,8 +437,8 @@ func Encode(w io.Writer, m image.Image, opt *Options) error {
 		{tStripByteCounts, dtLong, []uint32{uint32(imageLen)}},
 		// There is currently no support for storing the image
 		// resolution, so give a bogus value of 72x72 dpi.
-		{tXResolution, dtRational, []uint32{72, 1}},
-		{tYResolution, dtRational, []uint32{72, 1}},
+		{tXResolution, dtRational, []uint32{236, 1}},
+		{tYResolution, dtRational, []uint32{236, 1}},
 		{tResolutionUnit, dtShort, []uint32{resPerInch}},
 	}
 	if pr != prNone {
@@ -442,4 +452,12 @@ func Encode(w io.Writer, m image.Image, opt *Options) error {
 	}
 
 	return writeIFD(w, imageLen+8, ifd)
+}
+
+func bitsToByte(bits []byte) byte {
+	var res byte
+	for i, bit := range bits {
+		res += bit * byte(math.Pow(2, float64(len(bits)-i-1)))
+	}
+	return res
 }
