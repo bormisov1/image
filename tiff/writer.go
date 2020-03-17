@@ -285,6 +285,7 @@ type Options struct {
 	// photos with Deflate compression.
 	Predictor    bool
 	OneBitPerPix bool
+	DPI          uint32
 }
 
 // Encode writes the image m to w. opt determines the options used for
@@ -296,11 +297,13 @@ func Encode(w io.Writer, m image.Image, opt *Options) error {
 	compression := uint32(cNone)
 	predictor := false
 	oneBitPerPix := false
+	var dpi uint32 = 72
 	if opt != nil {
 		compression = opt.Compression.specValue()
 		// The predictor field is only used with LZW. See page 64 of the spec.
 		predictor = opt.Predictor && compression == cLZW
 		oneBitPerPix = opt.OneBitPerPix
+		dpi = opt.DPI
 	}
 
 	_, err := io.WriteString(w, leHeader)
@@ -437,8 +440,8 @@ func Encode(w io.Writer, m image.Image, opt *Options) error {
 		{tStripByteCounts, dtLong, []uint32{uint32(imageLen)}},
 		// There is currently no support for storing the image
 		// resolution, so give a bogus value of 72x72 dpi.
-		{tXResolution, dtRational, []uint32{236, 1}},
-		{tYResolution, dtRational, []uint32{236, 1}},
+		{tXResolution, dtRational, []uint32{dpi, 1}},
+		{tYResolution, dtRational, []uint32{dpi, 1}},
 		{tResolutionUnit, dtShort, []uint32{resPerInch}},
 	}
 	if pr != prNone {
